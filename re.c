@@ -1,34 +1,3 @@
-/*
- *
- * Mini regex-module inspired by Rob Pike's regex code described in:
- *
- * http://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html
- *
- *
- *
- * Supports:
- * ---------
- *   '.'        Dot, matches any character
- *   '^'        Start anchor, matches beginning of string
- *   '$'        End anchor, matches end of string
- *   '*'        Asterisk, match zero or more (greedy)
- *   '+'        Plus, match one or more (greedy)
- *   '?'        Question, match zero or one (non-greedy)
- *   '[abc]'    Character class, match if one of {'a', 'b', 'c'}
- *   '[^abc]'   Inverted class, match if NOT one of {'a', 'b', 'c'} -- NOTE: feature is currently broken!
- *   '[a-zA-Z]' Character ranges, the character set of the ranges { a-z | A-Z }
- *   '\s'       Whitespace, \t \f \r \n \v and spaces
- *   '\S'       Non-whitespace
- *   '\w'       Alphanumeric, [a-zA-Z0-9_]
- *   '\W'       Non-alphanumeric
- *   '\d'       Digits, [0-9]
- *   '\D'       Non-digits
- *
- *
- */
-
-
-
 #include "re.h"
 #include <stdio.h>
 
@@ -40,24 +9,24 @@
 
 enum { UNUSED, DOT, BEGIN, END, QUESTIONMARK, STAR, PLUS, CHAR, CHAR_CLASS, INV_CHAR_CLASS, DIGIT, NOT_DIGIT, ALPHA, NOT_ALPHA, WHITESPACE, NOT_WHITESPACE, /* BRANCH */ };
 
-typedef struct regex_t
+struct regex_t
 {
   unsigned char  type;   /* CHAR, STAR, etc.                      */
-  union
+  union 
   {
     unsigned char  ch;   /*      the character itself             */
     unsigned char* ccl;  /*  OR  a pointer to characters in class */
-  };
-} regex_t;
+  }ch_u;
+}regex_t;
 
 
 
 /* Private function declarations: */
-static int matchpattern(regex_t* pattern, const char* text, int* matchlength);
+static int matchpattern(struct regex_t* pattern, const char* text, int* matchlength);
 static int matchcharclass(char c, const char* str);
-static int matchstar(regex_t p, regex_t* pattern, const char* text, int* matchlength);
-static int matchplus(regex_t p, regex_t* pattern, const char* text, int* matchlength);
-static int matchone(regex_t p, char c);
+static int matchstar(struct regex_t p, struct regex_t* pattern, const char* text, int* matchlength);
+static int matchplus(struct regex_t p, struct regex_t* pattern, const char* text, int* matchlength);
+static int matchone(struct regex_t p, char c);
 static int matchdigit(char c);
 static int matchalpha(char c);
 static int matchwhitespace(char c);
@@ -110,7 +79,7 @@ re_t re_compile(const char* pattern)
   /* The sizes of the two static arrays below substantiates the static RAM usage of this module.
      MAX_REGEXP_OBJECTS is the max number of symbols in the expression.
      MAX_CHAR_CLASS_LEN determines the size of buffer for chars in all char-classes in the expression. */
-  static regex_t re_compiled[MAX_REGEXP_OBJECTS];
+  static struct regex_t re_compiled[MAX_REGEXP_OBJECTS];
   static unsigned char ccl_buf[MAX_CHAR_CLASS_LEN];
   int ccl_bufidx = 1;
 
@@ -155,7 +124,7 @@ re_t re_compile(const char* pattern)
             default:  
             {
               re_compiled[j].type = CHAR;
-              re_compiled[j].ch = pattern[i];
+              re_compiled[j].ch_u.ch = pattern[i];
             } break;
           }
         }
@@ -222,14 +191,14 @@ re_t re_compile(const char* pattern)
         }
         /* Null-terminate string end */
         ccl_buf[ccl_bufidx++] = 0;
-        re_compiled[j].ccl = &ccl_buf[buf_begin];
+        re_compiled[j].ch_u.ccl = &ccl_buf[buf_begin];
       } break;
 
       /* Other characters: */
       default:
       {
         re_compiled[j].type = CHAR;
-        re_compiled[j].ch = c;
+        re_compiled[j].ch_u.ch = c;
       } break;
     }
     /* no buffer-out-of-bounds access on invalid patterns - see https://github.com/kokke/tiny-regex-c/commit/1a279e04014b70b0695fba559a7c05d55e6ee90b */
@@ -247,7 +216,7 @@ re_t re_compile(const char* pattern)
   return (re_t) re_compiled;
 }
 
-void re_print(regex_t* pattern)
+void re_print(struct regex_t* pattern)
 {
   const char* types[] = { "UNUSED", "DOT", "BEGIN", "END", "QUESTIONMARK", "STAR", "PLUS", "CHAR", "CHAR_CLASS", "INV_CHAR_CLASS", "DIGIT", "NOT_DIGIT", "ALPHA", "NOT_ALPHA", "WHITESPACE", "NOT_WHITESPACE", "BRANCH" };
 
@@ -267,7 +236,7 @@ void re_print(regex_t* pattern)
       printf(" [");
       for (j = 0; j < MAX_CHAR_CLASS_LEN; ++j)
       {
-        c = pattern[i].ccl[j];
+        c = pattern[i].ch_u.ccl[j];
         if ((c == '\0') || (c == ']'))
         {
           break;
@@ -278,7 +247,7 @@ void re_print(regex_t* pattern)
     }
     else if (pattern[i].type == CHAR)
     {
-      printf(" '%c'", pattern[i].ch);
+      printf(" '%c'", pattern[i].ch_u.ch);
     }
     printf("\n");
   }
@@ -379,24 +348,24 @@ static int matchcharclass(char c, const char* str)
   return 0;
 }
 
-static int matchone(regex_t p, char c)
+static int matchone(struct regex_t p, char c)
 {
   switch (p.type)
   {
     case DOT:            return matchdot(c);
-    case CHAR_CLASS:     return  matchcharclass(c, (const char*)p.ccl);
-    case INV_CHAR_CLASS: return !matchcharclass(c, (const char*)p.ccl);
+    case CHAR_CLASS:     return  matchcharclass(c, (const char*)p.ch_u.ccl);
+    case INV_CHAR_CLASS: return !matchcharclass(c, (const char*)p.ch_u.ccl);
     case DIGIT:          return  matchdigit(c);
     case NOT_DIGIT:      return !matchdigit(c);
     case ALPHA:          return  matchalphanum(c);
     case NOT_ALPHA:      return !matchalphanum(c);
     case WHITESPACE:     return  matchwhitespace(c);
     case NOT_WHITESPACE: return !matchwhitespace(c);
-    default:             return  (p.ch == c);
+    default:             return  (p.ch_u.ch == c);
   }
 }
 
-static int matchstar(regex_t p, regex_t* pattern, const char* text, int* matchlength)
+static int matchstar(struct regex_t p, struct regex_t* pattern, const char* text, int* matchlength)
 {
   int prelen = *matchlength;
   const char* prepoint = text;
@@ -416,7 +385,7 @@ static int matchstar(regex_t p, regex_t* pattern, const char* text, int* matchle
   return 0;
 }
 
-static int matchplus(regex_t p, regex_t* pattern, const char* text, int* matchlength)
+static int matchplus(struct regex_t p, struct regex_t* pattern, const char* text, int* matchlength)
 {
   const char* prepoint = text;
   while ((text[0] != '\0') && matchone(p, *text))
@@ -434,7 +403,7 @@ static int matchplus(regex_t p, regex_t* pattern, const char* text, int* matchle
   return 0;
 }
 
-static int matchquestion(regex_t p, regex_t* pattern, const char* text, int* matchlength)
+static int matchquestion(struct regex_t p, struct regex_t* pattern, const char* text, int* matchlength)
 {
   if (p.type == UNUSED)
     return 1;
@@ -489,7 +458,7 @@ static int matchpattern(regex_t* pattern, const char* text, int *matchlength)
 #else
 
 /* Iterative matching */
-static int matchpattern(regex_t* pattern, const char* text, int* matchlength)
+static int matchpattern(struct regex_t* pattern, const char* text, int* matchlength)
 {
   int pre = *matchlength;
   do
